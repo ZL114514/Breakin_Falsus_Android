@@ -26,3 +26,4 @@ app/debug/
 *.build
 *.onefile-build
 main-server.exe
+app.exe
