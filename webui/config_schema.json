@@ -1,0 +1,15 @@
+[
+  {"key": "udp_ip", "label": "UDP 监听地址", "type": "string", "default": "0.0.0.0"},
+  {"key": "udp_port", "label": "UDP 端口", "type": "number", "default": 5005},
+  {"key": "tcp_ip", "label": "TCP 监听地址", "type": "string", "default": "0.0.0.0"},
+  {"key": "tcp_port", "label": "TCP 端口", "type": "number", "default": 5005},
+  {"key": "sensitivity", "label": "陀螺仪灵敏度", "type": "number", "default": 1.0, "step": 0.1},
+  {"key": "screen_width", "label": "屏幕宽度 (像素)", "type": "number", "default": 2880},
+  {"key": "zoom_level", "label": "缩放等级", "type": "number", "default": 2},
+  {"key": "angle_dead_zone", "label": "角度死区", "type": "number", "default": 0.05, "step": 0.01},
+  {"key": "interpolation_sleep", "label": "插值休眠时间 (秒)", "type": "number", "default": 0.005, "step": 0.001},
+  {"key": "accel_interpolation_steps", "label": "加速插值步数", "type": "number", "default": 3},
+  {"key": "accel_zero_g", "label": "零重力校准值", "type": "number", "default": 0.0, "step": 0.001},
+  {"key": "accel_filter_alpha", "label": "滤波系数 (Alpha)", "type": "number", "default": 0.35, "step": 0.01},
+  {"key": "accel_target_hysteresis_steps", "label": "目标迟滞步数", "type": "number", "default": 1}
+]
