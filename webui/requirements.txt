@@ -1,0 +1,9 @@
+pydirectinput
+pynput
+tomli; python_version < "3.11"
+
+fastapi
+uvicorn[standard]
+pydantic
+
+nuitka[onefile]
