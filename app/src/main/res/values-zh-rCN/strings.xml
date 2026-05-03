@@ -1,0 +1,27 @@
+<resources>
+    <string name="app_name">Breakin Falsus</string>
+    <string name="host_hint">网络主机位置</string>
+    <string name="port_hint">网络主机端口</string>
+    <string name="keyboard_hid_hint">键盘HID路径</string>
+    <string name="mouse_hid_hint">鼠标HID路径</string>
+    <string name="bluetooth_device_hint">蓝牙主机MAC</string>
+    <string name="apply_config">应用并保存配置</string>
+    <string name="keyboard_output_label">键盘输出</string>
+    <string name="mouse_output_label">鼠标输出</string>
+    <string name="sensor_input_label">鼠标输入</string>
+    <string name="sensitivity_label">灵敏度</string>
+    <string name="deadzone_label">死区</string>
+    <string name="chord_buffer_label">籼米区域 (dp)</string>
+    <string name="status_idle">就绪</string>
+    <string name="touch_pad_label">触控区域</string>
+    <string name="show_settings">设置</string>
+    <string name="reset_btn">重置光标位置</string>
+    <string name="pause_btn">暂停(Esc)</string>
+    <string name="calibrate_accel_btn">校准重力加速度</string>
+    <string name="lock_task_btn">锁定导航栏</string>
+    <string name="unlock_task_btn">解锁导航栏</string>
+    <string name="show_motion_log">显示MotionEvent日志</string>
+    <string name="bluetooth_permission_required">蓝牙模拟HID模式需要蓝牙权限</string>
+    <string name="bluetooth_hid_requires_android_p">蓝牙模拟HID模式至少需要安卓9</string>
+    <string name="invalid_port_fallback">非法！的端口，回落到5005</string>
+</resources>
