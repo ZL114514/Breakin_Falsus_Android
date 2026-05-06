@@ -2,6 +2,7 @@ import math
 import socket
 import threading
 import time
+from ctypes import Structure, Union, byref, c_long, c_ulong, c_void_p, sizeof, windll
 from pathlib import Path
 
 import pydirectinput
@@ -99,6 +100,73 @@ move_target_event = threading.Event()
 move_stop_event = threading.Event()
 server_stop_event = threading.Event()
 
+user32 = windll.user32
+
+INPUT_MOUSE = 0
+MOUSEEVENTF_MOVE = 0x0001
+MOUSEEVENTF_ABSOLUTE = 0x8000
+MOUSEEVENTF_VIRTUALDESK = 0x4000
+SM_XVIRTUALSCREEN = 76
+SM_YVIRTUALSCREEN = 77
+SM_CXVIRTUALSCREEN = 78
+SM_CYVIRTUALSCREEN = 79
+
+
+class POINT(Structure):
+    _fields_ = [("x", c_long), ("y", c_long)]
+
+
+class MOUSEINPUT(Structure):
+    _fields_ = [
+        ("dx", c_long),
+        ("dy", c_long),
+        ("mouseData", c_ulong),
+        ("dwFlags", c_ulong),
+        ("time", c_ulong),
+        ("dwExtraInfo", c_void_p),
+    ]
+
+
+class INPUTUNION(Union):
+    _fields_ = [("mi", MOUSEINPUT)]
+
+
+class INPUT(Structure):
+    _fields_ = [("type", c_ulong), ("union", INPUTUNION)]
+
+
+def get_cursor_position():
+    point = POINT()
+    if not user32.GetCursorPos(byref(point)):
+        raise OSError("GetCursorPos failed")
+    return point.x, point.y
+
+
+def normalize_absolute_coordinate(value, origin, span):
+    if span <= 1:
+        return 0
+    clamped = max(origin, min(value, origin + span - 1))
+    return round((clamped - origin) * 65535 / (span - 1))
+
+
+def move_mouse_absolute(x, y):
+    virtual_left = user32.GetSystemMetrics(SM_XVIRTUALSCREEN)
+    virtual_top = user32.GetSystemMetrics(SM_YVIRTUALSCREEN)
+    virtual_width = user32.GetSystemMetrics(SM_CXVIRTUALSCREEN)
+    virtual_height = user32.GetSystemMetrics(SM_CYVIRTUALSCREEN)
+
+    mouse_input = MOUSEINPUT(
+        dx=normalize_absolute_coordinate(x, virtual_left, virtual_width),
+        dy=normalize_absolute_coordinate(y, virtual_top, virtual_height),
+        mouseData=0,
+        dwFlags=MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK,
+        time=0,
+        dwExtraInfo=0,
+    )
+    input_record = INPUT(type=INPUT_MOUSE, union=INPUTUNION(mi=mouse_input))
+    if user32.SendInput(1, byref(input_record), sizeof(INPUT)) != 1:
+        raise OSError("SendInput failed")
+
 
 def log(message):
     print(f"[{time.strftime('%H:%M:%S')}] {message}")
@@ -131,12 +199,15 @@ def quantize_accel_target(raw_target_x):
 
 def queue_accel_target(raw_value):
     global accel_filtered_value, move_target_x, move_steps_remaining, last_queued_target_x
-    adjusted_value = raw_value - accel_zero_g
+    adjusted_value = (raw_value*SENSITIVITY) - accel_zero_g
     accel_filtered_value += (adjusted_value - accel_filtered_value) * ACCEL_FILTER_ALPHA
     filtered_value = 0.0 if abs(accel_filtered_value) < ANGLE_DEAD_ZONE else accel_filtered_value
     raw_target_x = math.floor(filtered_value * ACCEL_COEFFICIENT + MIDPOINT)
     target_x = quantize_accel_target(raw_target_x)
-    if abs(target_x - MIDPOINT) <= ACCEL_TARGET_HYSTERESIS_PX:
+
+    current_x, current_y = get_cursor_position()
+    move_mouse_absolute(target_x, current_y)
+    '''if abs(target_x - MIDPOINT) <= ACCEL_TARGET_HYSTERESIS_PX:
         target_x = MIDPOINT
     with move_target_lock:
         if target_x == last_queued_target_x and move_steps_remaining > 0:
@@ -146,16 +217,12 @@ def queue_accel_target(raw_value):
         move_target_x = target_x
         last_queued_target_x = target_x
         move_steps_remaining = ACCEL_INTERPOLATION_STEPS
-    move_target_event.set()
+    move_target_event.set()'''
 
 
 def move_to_midpoint():
-    global move_target_x, move_steps_remaining, last_queued_target_x
-    with move_target_lock:
-        move_target_x = MIDPOINT
-        last_queued_target_x = MIDPOINT
-        move_steps_remaining = ACCEL_INTERPOLATION_STEPS
-    move_target_event.set()
+    current_x, current_y = get_cursor_position()
+    move_mouse_absolute(MIDPOINT, current_y)
 
 
 def move_worker():
@@ -171,7 +238,7 @@ def move_worker():
             target_x = move_target_x
             steps_remaining = move_steps_remaining
 
-        current_x = pydirectinput.position()[0]
+        current_x, current_y = get_cursor_position()
         delta_x = int(round(target_x - current_x))
         if delta_x == 0 or steps_remaining <= 0:
             with move_target_lock:
@@ -183,7 +250,7 @@ def move_worker():
         step_delta = int(round(delta_x / steps_remaining))
         if step_delta == 0:
             step_delta = 1 if delta_x > 0 else -1
-        pydirectinput.moveRel(xOffset=step_delta, yOffset=0, relative=True)
+        move_mouse_absolute(current_x + step_delta, current_y)
 
         with move_target_lock:
             if move_target_x == target_x:
@@ -191,7 +258,7 @@ def move_worker():
                 if move_steps_remaining == 0:
                     move_target_event.clear()
                     print(f"Reached target x={target_x} with final delta={delta_x}")
-        time.sleep(INTERPOLATION_SLEEP)
+        #time.sleep(INTERPOLATION_SLEEP)
 
 
 def send_pause_key():
