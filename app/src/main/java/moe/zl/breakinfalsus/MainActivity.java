@@ -11,6 +11,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.text.TextUtils;
 import android.view.View;
+import android.view.WindowManager;
 import android.widget.ArrayAdapter;
 import android.widget.Spinner;
 import android.widget.TextView;
@@ -101,6 +102,13 @@ public class MainActivity extends AppCompatActivity implements SixKeyTouchLayout
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         EdgeToEdge.enable(this);
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN|WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS);
+        getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_FULLSCREEN|View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            WindowManager.LayoutParams lp = getWindow().getAttributes();
+            lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+            getWindow().setAttributes(lp);
+        }
         setContentView(R.layout.activity_main);
         preferences = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
         bindViews();
@@ -567,14 +575,16 @@ public class MainActivity extends AppCompatActivity implements SixKeyTouchLayout
         ViewCompat.setOnApplyWindowInsetsListener(rootContent, (view, insets) -> {
             Insets statusInsets = insets.getInsets(WindowInsetsCompat.Type.statusBars());
             Insets cutoutInsets = insets.getInsets(WindowInsetsCompat.Type.displayCutout());
+            Insets navigationInsets = insets.getInsets(WindowInsetsCompat.Type.navigationBars());
             int topInset = Math.max(statusInsets.top, cutoutInsets.top);
             int leftInset = Math.max(statusInsets.left, cutoutInsets.left);
             int rightInset = Math.max(statusInsets.right, cutoutInsets.right);
+            int bottomInset = Math.max(cutoutInsets.bottom, navigationInsets.bottom);
 
             view.setPadding(
-                    rootPaddingLeft + leftInset,
+                    rootPaddingLeft,
                     rootPaddingTop,
-                    rootPaddingRight + rightInset,
+                    rootPaddingRight,
                     rootPaddingBottom
             );
             if (topBar != null) {
@@ -582,7 +592,7 @@ public class MainActivity extends AppCompatActivity implements SixKeyTouchLayout
                         topBarPaddingLeft,
                         topBarPaddingTop + topInset,
                         topBarPaddingRight,
-                        topBarPaddingBottom
+                        topBarPaddingBottom + bottomInset
                 );
             }
             return insets;

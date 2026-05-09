@@ -29,6 +29,7 @@ DEFAULT_CONFIG = {
     "accel_zero_g": 0.0,
     "accel_filter_alpha": 0.35,
     "accel_target_hysteresis_steps": 1,
+    "padding_counter": 0.0,
 }
 
 
@@ -82,6 +83,7 @@ MIDPOINT = SCREEN_WIDTH // ZOOM_LEVEL // 2
 
 is_controlling = True
 accel_zero_g = float(config.get("accel_zero_g", 0.0))
+padding_counter = float(config.get("padding_counter", 0.0))
 accel_filtered_value = 0.0
 gyro_remainder = 0.0
 
@@ -198,13 +200,12 @@ def quantize_accel_target(raw_target_x):
 
 
 def queue_accel_target(raw_value):
-    global accel_filtered_value, move_target_x, move_steps_remaining, last_queued_target_x
+    global accel_filtered_value, move_target_x, move_steps_remaining, last_queued_target_x, padding_counter
     adjusted_value = (raw_value*SENSITIVITY) - accel_zero_g
     accel_filtered_value += (adjusted_value - accel_filtered_value) * ACCEL_FILTER_ALPHA
     filtered_value = 0.0 if abs(accel_filtered_value) < ANGLE_DEAD_ZONE else accel_filtered_value
-    raw_target_x = math.floor(filtered_value * ACCEL_COEFFICIENT + MIDPOINT)
+    raw_target_x = math.floor(filtered_value * ACCEL_COEFFICIENT + MIDPOINT - padding_counter)
     target_x = quantize_accel_target(raw_target_x)
-
     current_x, current_y = get_cursor_position()
     move_mouse_absolute(target_x, current_y)
     '''if abs(target_x - MIDPOINT) <= ACCEL_TARGET_HYSTERESIS_PX:
@@ -221,8 +222,12 @@ def queue_accel_target(raw_value):
 
 
 def move_to_midpoint():
-    current_x, current_y = get_cursor_position()
-    move_mouse_absolute(MIDPOINT, current_y)
+    global move_target_x, move_steps_remaining, last_queued_target_x, padding_counter
+    x, y = get_cursor_position()
+    padding_counter = x - MIDPOINT
+    config["padding_counter"] = padding_counter
+    save_config(config)
+    log(f"Saved padding counter = {padding_counter:.5f}")
 
 
 def move_worker():

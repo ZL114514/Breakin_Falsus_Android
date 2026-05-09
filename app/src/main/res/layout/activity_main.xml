@@ -71,11 +71,13 @@
         android:layout_height="wrap_content"
         android:layout_gravity="top"
         android:layout_margin="12dp"
-        app:cardCornerRadius="8dp">
+        app:cardCornerRadius="8dp"
+        android:clipToPadding="true">
 
         <ScrollView
             android:layout_width="match_parent"
-            android:layout_height="wrap_content">
+            android:layout_height="wrap_content"
+            android:clipToPadding="true">
 
             <LinearLayout
                 android:layout_width="match_parent"
