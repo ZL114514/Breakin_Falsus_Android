@@ -8,13 +8,13 @@ import android.animation.ValueAnimator;
 import android.content.Context;
 import android.content.res.TypedArray;
 import android.graphics.Canvas;
-import android.graphics.Paint;
+import android.graphics.Movie;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.os.SystemClock;
 import android.text.TextUtils;
-import android.util.SparseArray;
 import android.util.AttributeSet;
+import android.util.SparseArray;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
@@ -30,9 +30,11 @@ import androidx.core.graphics.ColorUtils;
 
 import com.google.android.material.card.MaterialCardView;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Locale;
-import java.util.Random;
 
 import moe.zl.breakinfalsus.R;
 
@@ -47,10 +49,8 @@ public class SixKeyTouchLayout extends FrameLayout {
     private static final long PRESS_IN_DURATION_MS = 72L;
     private static final long RELEASE_DURATION_MS = 210L;
     private static final int KEY_COUNT = KEY_LABELS.length;
-    private static final long PARTICLE_EMIT_INTERVAL_MS = 34L;
-    private static final long PARTICLE_MIN_LIFETIME_MS = 240L;
-    private static final long PARTICLE_MAX_LIFETIME_MS = 420L;
-    private static final int MAX_PARTICLES = 180;
+    private static final float HOLD_EFFECT_SIZE_DP = 96f;
+    private static final float PRESS_EFFECT_SIZE_DP = 138f;
 
     private final MaterialCardView[] keyViews = new MaterialCardView[KEY_COUNT];
     private final TextView[] keyLabels = new TextView[KEY_COUNT];
@@ -60,10 +60,8 @@ public class SixKeyTouchLayout extends FrameLayout {
     private final float[] keyWidthRatios = DEFAULT_KEY_WIDTH_RATIOS.clone();
     private final float[] keyLeftBounds = new float[KEY_COUNT];
     private final float[] keyRightBounds = new float[KEY_COUNT];
-    private final ArrayList<Particle> particles = new ArrayList<>();
+    private final ArrayList<GifEffect> burstEffects = new ArrayList<>();
     private final SparseArray<TouchEmitter> emitters = new SparseArray<>();
-    private final Random particleRandom = new Random();
-    private final Paint particlePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
 
     private final int idleCardColor = 0x66161b2b;
     private final int pressedCardColor = 0xff0f1726;
@@ -76,6 +74,8 @@ public class SixKeyTouchLayout extends FrameLayout {
     private TextView logt;
     private boolean motionLogEnabled;
     private float chordBufferPx;
+    private byte[] holdEffectBytes;
+    private byte[] pressEffectBytes;
 
     public SixKeyTouchLayout(@NonNull Context context) {
         super(context);
@@ -100,7 +100,8 @@ public class SixKeyTouchLayout extends FrameLayout {
         setClipChildren(false);
         setBackgroundColor(0xff02040a);
         chordBufferPx = dp(12);
-        particlePaint.setStyle(Paint.Style.FILL);
+        holdEffectBytes = readRawBytes(R.drawable.bx);
+        pressEffectBytes = readRawBytes(R.drawable.xbs);
 
         if (attrs != null) {
             TypedArray typedArray = context.obtainStyledAttributes(attrs, R.styleable.SixKeyTouchLayout);
@@ -241,7 +242,7 @@ public class SixKeyTouchLayout extends FrameLayout {
     @Override
     protected void dispatchDraw(Canvas canvas) {
         super.dispatchDraw(canvas);
-        drawParticles(canvas);
+        drawGifEffects(canvas);
     }
 
     @Override
@@ -259,7 +260,7 @@ public class SixKeyTouchLayout extends FrameLayout {
                 updateStatesForPointer(nextStates, event.getX(i));
             }
         }
-        updateParticleEmitters(event);
+        updateEffectEmitters(event);
         boolean changed = applyKeyStates(nextStates);
         if (changed && listener != null) {
             listener.onKeyStateChanged(keyStates.clone());
@@ -267,32 +268,54 @@ public class SixKeyTouchLayout extends FrameLayout {
         if (motionLogEnabled) {
             logt.setText(buildMotionLog(event, nextStates));
         }
-        if (!particles.isEmpty() || emitters.size() > 0) {
+        if (hasActiveEffects()) {
             postInvalidateOnAnimation();
         }
         return true;
     }
 
-    private void drawParticles(@NonNull Canvas canvas) {
+    private void drawGifEffects(@NonNull Canvas canvas) {
         long now = SystemClock.uptimeMillis();
-        for (int i = particles.size() - 1; i >= 0; i--) {
-            Particle particle = particles.get(i);
-            float progress = (now - particle.bornAtMs) / (float) particle.lifeMs;
-            if (progress >= 1f) {
-                particles.remove(i);
-                continue;
+        for (int i = burstEffects.size() - 1; i >= 0; i--) {
+            GifEffect effect = burstEffects.get(i);
+            if (!drawEffect(canvas, effect, now)) {
+                burstEffects.remove(i);
             }
-            float eased = 1f - (1f - progress) * (1f - progress);
-            float currentX = particle.startX + particle.velocityX * eased;
-            float currentY = particle.startY + particle.velocityY * eased + particle.gravity * progress * progress;
-            float radius = particle.startRadius * (1f - progress * 0.82f) * 5;
-            int alpha = Math.max(0, Math.min(255, Math.round(255f * (1f - progress) * particle.alphaScale)));
-            particlePaint.setColor(ColorUtils.setAlphaComponent(particle.color, alpha));
-            canvas.drawRect(currentX, currentY, currentX + Math.max(1f, radius),currentY + Math.max(1f,radius), particlePaint);
         }
-        if (!particles.isEmpty() || emitters.size() > 0) {
+        for (int i = 0; i < emitters.size(); i++) {
+            TouchEmitter emitter = emitters.valueAt(i);
+            if (emitter.holdEffect != null) {
+                drawEffect(canvas, emitter.holdEffect, now);
+            }
+        }
+        if (hasActiveEffects()) {
             postInvalidateOnAnimation();
         }
+    }
+
+    private boolean drawEffect(@NonNull Canvas canvas, @NonNull GifEffect effect, long now) {
+        if (effect.movie == null) {
+            return false;
+        }
+        int duration = effect.durationMs > 0 ? effect.durationMs : 1000;
+        long elapsed = now - effect.startedAtMs;
+        if (!effect.loop && elapsed >= duration) {
+            return false;
+        }
+        int time = effect.loop ? (int) (elapsed % duration) : (int) Math.min(elapsed, duration - 1L);
+        effect.movie.setTime(time);
+
+        float scaleX = effect.width / effect.movie.width();
+        float scaleY = effect.height / effect.movie.height();
+        float drawLeft = effect.centerX - effect.width * 0.5f;
+        float drawTop = effect.centerY - effect.height * 0.5f;
+
+        canvas.save();
+        canvas.translate(drawLeft, drawTop);
+        canvas.scale(scaleX, scaleY);
+        effect.movie.draw(canvas, 0f, 0f);
+        canvas.restore();
+        return true;
     }
 
     private boolean applyKeyStates(boolean[] nextStates) {
@@ -478,16 +501,11 @@ public class SixKeyTouchLayout extends FrameLayout {
         }
     }
 
-    private void updateParticleEmitters(@NonNull MotionEvent event) {
-        long now = SystemClock.uptimeMillis();
+    private void updateEffectEmitters(@NonNull MotionEvent event) {
         int action = event.getActionMasked();
         int actionIndex = event.getActionIndex();
 
         if (action == MotionEvent.ACTION_CANCEL) {
-            for (int i = 0; i < emitters.size(); i++) {
-                TouchEmitter emitter = emitters.valueAt(i);
-                spawnBurst(emitter.x, emitter.y, 8, 0.65f);
-            }
             emitters.clear();
             return;
         }
@@ -509,90 +527,49 @@ public class SixKeyTouchLayout extends FrameLayout {
                 emitter = new TouchEmitter(pointerId);
                 emitters.put(pointerId, emitter);
             }
-            float dx = x - emitter.x;
-            float dy = y - emitter.y;
             emitter.x = x;
             emitter.y = y;
-            float travel = (float) Math.hypot(dx, dy);
             if (isNewEmitter || (action == MotionEvent.ACTION_DOWN && i == actionIndex)
                     || (action == MotionEvent.ACTION_POINTER_DOWN && i == actionIndex)) {
-                emitter.lastEmitAtMs = now;
-                spawnBurst(x, y, 12, 1f);
-            } else if (now - emitter.lastEmitAtMs >= PARTICLE_EMIT_INTERVAL_MS || travel >= dp(8)) {
-                emitter.lastEmitAtMs = now;
-                spawnTrail(x, y, dx, dy, travel);
+                emitter.holdEffect = createGifEffect(holdEffectBytes, x, y, dpF(HOLD_EFFECT_SIZE_DP), true);
+                GifEffect pressEffect = createGifEffect(pressEffectBytes, x, y, dpF(PRESS_EFFECT_SIZE_DP), false);
+                if (pressEffect != null) {
+                    burstEffects.add(pressEffect);
+                }
+            } else if (emitter.holdEffect != null) {
+                emitter.holdEffect.centerX = x;
+                emitter.holdEffect.centerY = y;
             }
         }
 
         if (liftedPointerId != -1) {
-            TouchEmitter liftedEmitter = emitters.get(liftedPointerId);
-            if (liftedEmitter != null) {
-                spawnBurst(liftedEmitter.x, liftedEmitter.y, 10, 0.85f);
-                emitters.remove(liftedPointerId);
-            }
+            emitters.remove(liftedPointerId);
         }
     }
 
-    private void spawnTrail(float x, float y, float dx, float dy, float travel) {
-        int count = travel >= dp(16) ? 4 : 2;
-        for (int i = 0; i < count; i++) {
-            float spread = 0.65f + particleRandom.nextFloat() * 0.65f;
-            float velocityX = dx * 0.25f + randomRange(-dp(18), dp(18)) * spread;
-            float velocityY = dy * 0.18f + randomRange(-dp(30), dp(12)) * spread;
-            addParticle(
-                    x + randomRange(-dp(6), dp(6)),
-                    y + randomRange(-dp(4), dp(4)),
-                    velocityX,
-                    velocityY,
-                    dpF(2.2f) + particleRandom.nextFloat() * dpF(2.8f),
-                    0xffeecc33,
-                    0.72f + particleRandom.nextFloat() * 0.2f
-            );
+    @Nullable
+    private GifEffect createGifEffect(@Nullable byte[] bytes, float centerX, float centerY, float size, boolean loop) {
+        if (bytes == null || bytes.length == 0) {
+            return null;
         }
+        Movie movie = Movie.decodeByteArray(bytes, 0, bytes.length);
+        if (movie == null || movie.width() <= 0 || movie.height() <= 0) {
+            return null;
+        }
+        GifEffect effect = new GifEffect();
+        effect.movie = movie;
+        effect.centerX = centerX;
+        effect.centerY = centerY;
+        effect.width = size;
+        effect.height = size * (movie.height() / (float) movie.width());
+        effect.loop = loop;
+        effect.startedAtMs = SystemClock.uptimeMillis();
+        effect.durationMs = movie.duration() > 0 ? movie.duration() : 1000;
+        return effect;
     }
 
-    private void spawnBurst(float x, float y, int count, float velocityScale) {
-        for (int i = 0; i < count; i++) {
-            double angle = particleRandom.nextDouble() * Math.PI * 2d;
-            float speed = (dpF(16f) + particleRandom.nextFloat() * dpF(42f)) * velocityScale;
-            int color = particleRandom.nextBoolean() ? 0xffffbb33 : 0xffffffff;
-            addParticle(
-                    x + randomRange(-dp(3), dp(3)),
-                    y + randomRange(-dp(3), dp(3)),
-                    (float) Math.cos(angle) * speed,
-                    (float) Math.sin(angle) * speed - dpF(8f),
-                    dpF(2.4f) + particleRandom.nextFloat() * dpF(3.4f),
-                    color,
-                    0.85f + particleRandom.nextFloat() * 0.15f
-            );
-        }
-    }
-
-    private void addParticle(
-            float startX,
-            float startY,
-            float velocityX,
-            float velocityY,
-            float radius,
-            int color,
-            float alphaScale
-    ) {
-        if (particles.size() >= MAX_PARTICLES) {
-            particles.remove(0);
-        }
-        Particle particle = new Particle();
-        particle.startX = startX;
-        particle.startY = startY;
-        particle.velocityX = velocityX;
-        particle.velocityY = velocityY;
-        particle.gravity = dpF(10f) + particleRandom.nextFloat() * dpF(18f);
-        particle.startRadius = radius;
-        particle.color = color;
-        particle.alphaScale = alphaScale;
-        particle.bornAtMs = SystemClock.uptimeMillis();
-        particle.lifeMs = PARTICLE_MIN_LIFETIME_MS
-                + particleRandom.nextInt((int) (PARTICLE_MAX_LIFETIME_MS - PARTICLE_MIN_LIFETIME_MS + 1));
-        particles.add(particle);
+    private boolean hasActiveEffects() {
+        return !burstEffects.isEmpty() || emitters.size() > 0;
     }
 
     private int findKeyIndex(float x) {
@@ -633,7 +610,7 @@ public class SixKeyTouchLayout extends FrameLayout {
         for (int i = 0; i < KEY_COUNT; i++) {
             try {
                 float value = Float.parseFloat(tokens[i]);
-                parsed[i] = value >= 0f ? value : 1f;
+                parsed[i] = value > 0f ? value : 1f;
             } catch (NumberFormatException exception) {
                 return false;
             }
@@ -710,6 +687,21 @@ public class SixKeyTouchLayout extends FrameLayout {
         return drawable;
     }
 
+    @Nullable
+    private byte[] readRawBytes(int resId) {
+        try (InputStream stream = getResources().openRawResource(resId);
+             ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            byte[] buffer = new byte[4096];
+            int read;
+            while ((read = stream.read(buffer)) != -1) {
+                output.write(buffer, 0, read);
+            }
+            return output.toByteArray();
+        } catch (IOException | RuntimeException exception) {
+            return null;
+        }
+    }
+
     private int dp(int value) {
         return Math.round(value * getResources().getDisplayMetrics().density);
     }
@@ -718,31 +710,25 @@ public class SixKeyTouchLayout extends FrameLayout {
         return value * getResources().getDisplayMetrics().density;
     }
 
-    private float randomRange(float min, float max) {
-        return min + particleRandom.nextFloat() * (max - min);
-    }
-
     private static final class TouchEmitter {
         final int pointerId;
         float x;
         float y;
-        long lastEmitAtMs;
+        GifEffect holdEffect;
 
         TouchEmitter(int pointerId) {
             this.pointerId = pointerId;
         }
     }
 
-    private static final class Particle {
-        float startX;
-        float startY;
-        float velocityX;
-        float velocityY;
-        float gravity;
-        float startRadius;
-        float alphaScale;
-        int color;
-        long bornAtMs;
-        long lifeMs;
+    private static final class GifEffect {
+        Movie movie;
+        float centerX;
+        float centerY;
+        float width;
+        float height;
+        boolean loop;
+        long startedAtMs;
+        int durationMs;
     }
 }
