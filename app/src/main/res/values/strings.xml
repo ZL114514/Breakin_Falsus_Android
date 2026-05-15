@@ -12,7 +12,9 @@
     <string name="sensitivity_label">Sensitivity</string>
     <string name="deadzone_label">Deadzone</string>
     <string name="chord_buffer_label">Chord Buffer (dp)</string>
+    <string name="key_width_ratios_hint">Key Width Ratios (1:1:1:1:1:1)</string>
     <string name="status_idle">Ready</string>
+    <string name="configuration_applied">Configuration applied</string>
     <string name="touch_pad_label">Touch Zones</string>
     <string name="show_settings">Settings</string>
     <string name="reset_btn">Reset</string>
@@ -24,4 +26,5 @@
     <string name="bluetooth_permission_required">Bluetooth permission is required for BT_HID mode</string>
     <string name="bluetooth_hid_requires_android_p">BT_HID mode requires Android 9 or newer</string>
     <string name="invalid_port_fallback">Invalid port, fallback to 9527</string>
+    <string name="invalid_key_width_ratios">Invalid key width ratios, use 1:1:1:1:1:1</string>
 </resources>

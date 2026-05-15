@@ -61,6 +61,7 @@ public class MainActivity extends AppCompatActivity implements SixKeyTouchLayout
     private static final String PREF_DEADZONE = "deadzone";
     private static final String PREF_ACCEL_ZERO_G = "accel_zero_g";
     private static final String PREF_CHORD_BUFFER = "chord_buffer";
+    private static final String PREF_KEY_WIDTH_RATIOS = "key_width_ratios";
     private static final String PREF_MOTION_LOG_ENABLED = "motion_log_enabled";
     private static final String PREF_PANEL_HIDDEN = "panel_hidden";
     private static final long PANEL_ANIMATION_DURATION_MS = 200L;
@@ -74,6 +75,7 @@ public class MainActivity extends AppCompatActivity implements SixKeyTouchLayout
     private TextInputEditText bluetoothDeviceInput;
     private TextInputEditText keyboardHidInput;
     private TextInputEditText mouseHidInput;
+    private TextInputEditText keyWidthRatiosInput;
     private Spinner keyboardOutputSpinner;
     private Spinner mouseOutputSpinner;
     private Spinner sensorModeSpinner;
@@ -164,6 +166,7 @@ public class MainActivity extends AppCompatActivity implements SixKeyTouchLayout
         bluetoothDeviceInput = findViewById(R.id.bluetoothDeviceInput);
         keyboardHidInput = findViewById(R.id.keyboardHidInput);
         mouseHidInput = findViewById(R.id.mouseHidInput);
+        keyWidthRatiosInput = findViewById(R.id.keyWidthRatiosInput);
         keyboardOutputSpinner = findViewById(R.id.keyboardOutputSpinner);
         mouseOutputSpinner = findViewById(R.id.mouseOutputSpinner);
         sensorModeSpinner = findViewById(R.id.sensorModeSpinner);
@@ -235,6 +238,11 @@ public class MainActivity extends AppCompatActivity implements SixKeyTouchLayout
         if (needsBluetoothPermissions() && !ensureBluetoothPermissions()) {
             return;
         }
+        String ratioInput = getKeyWidthRatioInput();
+        if (!touchPad.setKeyWidthRatios(ratioInput)) {
+            updateStatus(getString(R.string.invalid_key_width_ratios));
+            return;
+        }
         closeTransport(keyboardTransport);
         closeTransport(mouseTransport);
         keyboardTransport = buildTransport(getSelectedOutputMode(keyboardOutputSpinner));
@@ -248,7 +256,7 @@ public class MainActivity extends AppCompatActivity implements SixKeyTouchLayout
         if (mouseTransport != null) {
             mouseTransport.sendAccelerometerCalibration(sensorMouseController.getAccelerometerZero());
         }
-        updateStatus("Configuration applied");
+        updateStatus(getString(R.string.configuration_applied));
         if (mouseTransport != null && mouseTransport.supportsReset()) {
             resetButton.setVisibility(VISIBLE);
             resetButton.setOnClickListener((View v) -> mouseTransport.sendReset());
@@ -329,6 +337,7 @@ public class MainActivity extends AppCompatActivity implements SixKeyTouchLayout
         bluetoothDeviceInput.setText(preferences.getString(PREF_BLUETOOTH_DEVICE, ""));
         keyboardHidInput.setText(preferences.getString(PREF_KEYBOARD_HID, "/dev/hidg0"));
         mouseHidInput.setText(preferences.getString(PREF_MOUSE_HID, "/dev/hidg1"));
+        keyWidthRatiosInput.setText(preferences.getString(PREF_KEY_WIDTH_RATIOS, "1.2:1:1:1:1:1.2"));
         sensitivitySlider.setValue(preferences.getFloat(PREF_SENSITIVITY, 20f));
         deadzoneSlider.setValue(preferences.getFloat(PREF_DEADZONE, 0.05f));
         sensorMouseController.setAccelerometerZero(preferences.getFloat(PREF_ACCEL_ZERO_G, 0f));
@@ -347,6 +356,7 @@ public class MainActivity extends AppCompatActivity implements SixKeyTouchLayout
                 .putString(PREF_BLUETOOTH_DEVICE, getText(bluetoothDeviceInput))
                 .putString(PREF_KEYBOARD_HID, getText(keyboardHidInput))
                 .putString(PREF_MOUSE_HID, getText(mouseHidInput))
+                .putString(PREF_KEY_WIDTH_RATIOS, getKeyWidthRatioInput())
                 .putString(PREF_KEYBOARD_OUTPUT, getSelectedOutputMode(keyboardOutputSpinner))
                 .putString(PREF_MOUSE_OUTPUT, getSelectedOutputMode(mouseOutputSpinner))
                 .putString(PREF_SENSOR_MODE, getSelectedSensorMode())
@@ -392,6 +402,12 @@ public class MainActivity extends AppCompatActivity implements SixKeyTouchLayout
 
     private String getText(@NonNull TextInputEditText editText) {
         return editText.getText() == null ? "" : editText.getText().toString().trim();
+    }
+
+    @NonNull
+    private String getKeyWidthRatioInput() {
+        String value = getText(keyWidthRatiosInput);
+        return value.isEmpty() ? "1.2:1:1:1:1:1.2" : value;
     }
 
     private int dp(int value) {
@@ -592,7 +608,7 @@ public class MainActivity extends AppCompatActivity implements SixKeyTouchLayout
                         topBarPaddingLeft,
                         topBarPaddingTop + topInset,
                         topBarPaddingRight,
-                        topBarPaddingBottom + bottomInset
+                        topBarPaddingBottom
                 );
             }
             return insets;

@@ -233,6 +233,21 @@
                     </com.google.android.material.textfield.TextInputLayout>
                 </LinearLayout>
 
+                <com.google.android.material.textfield.TextInputLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:hint="@string/key_width_ratios_hint">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/keyWidthRatiosInput"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:inputType="textNoSuggestions"
+                        android:singleLine="true"
+                        android:text="1:1:1:1:1:1" />
+                </com.google.android.material.textfield.TextInputLayout>
+
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
