@@ -7,13 +7,16 @@ import android.animation.ObjectAnimator;
 import android.animation.ValueAnimator;
 import android.content.Context;
 import android.content.res.TypedArray;
+import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Movie;
+import android.graphics.Paint;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.os.SystemClock;
 import android.text.TextUtils;
 import android.util.AttributeSet;
+import android.util.LruCache;
 import android.util.SparseArray;
 import android.view.Gravity;
 import android.view.MotionEvent;
@@ -35,6 +38,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Locale;
+import java.util.Random;
 
 import moe.zl.breakinfalsus.R;
 
@@ -51,6 +55,13 @@ public class SixKeyTouchLayout extends FrameLayout {
     private static final int KEY_COUNT = KEY_LABELS.length;
     private static final float HOLD_EFFECT_SIZE_DP = 96f;
     private static final float PRESS_EFFECT_SIZE_DP = 138f;
+    private static final int PRESS_BURST_COUNT = 7;
+    private static final float PRESS_BURST_MIN_SIZE_DP = 48f;
+    private static final float PRESS_BURST_MAX_SIZE_DP = 86f;
+    private static final float PRESS_BURST_SPEED_MIN_DP = 120f;
+    private static final float PRESS_BURST_SPEED_MAX_DP = 260f;
+    private static final float PRESS_BURST_GRAVITY_DP = 520f;
+    private static final float PRESS_BURST_START_OFFSET_DP = 18f;
 
     private final MaterialCardView[] keyViews = new MaterialCardView[KEY_COUNT];
     private final TextView[] keyLabels = new TextView[KEY_COUNT];
@@ -62,6 +73,8 @@ public class SixKeyTouchLayout extends FrameLayout {
     private final float[] keyRightBounds = new float[KEY_COUNT];
     private final ArrayList<GifEffect> burstEffects = new ArrayList<>();
     private final SparseArray<TouchEmitter> emitters = new SparseArray<>();
+    private final Random random = new Random();
+    private final Paint gifPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG | Paint.DITHER_FLAG);
 
     private final int idleCardColor = 0x66161b2b;
     private final int pressedCardColor = 0xff0f1726;
@@ -74,8 +87,8 @@ public class SixKeyTouchLayout extends FrameLayout {
     private TextView logt;
     private boolean motionLogEnabled;
     private float chordBufferPx;
-    private byte[] holdEffectBytes;
-    private byte[] pressEffectBytes;
+    private GifFrameCache holdEffectCache;
+    private GifFrameCache pressEffectCache;
 
     public SixKeyTouchLayout(@NonNull Context context) {
         super(context);
@@ -100,8 +113,8 @@ public class SixKeyTouchLayout extends FrameLayout {
         setClipChildren(false);
         setBackgroundColor(0xff02040a);
         chordBufferPx = dp(12);
-        holdEffectBytes = readRawBytes(R.drawable.bx);
-        pressEffectBytes = readRawBytes(R.drawable.xbs);
+        holdEffectCache = GifFrameCache.fromResource(getContext(), R.drawable.bx);
+        pressEffectCache = GifFrameCache.fromResource(getContext(), R.drawable.xbs);
 
         if (attrs != null) {
             TypedArray typedArray = context.obtainStyledAttributes(attrs, R.styleable.SixKeyTouchLayout);
@@ -294,26 +307,48 @@ public class SixKeyTouchLayout extends FrameLayout {
     }
 
     private boolean drawEffect(@NonNull Canvas canvas, @NonNull GifEffect effect, long now) {
-        if (effect.movie == null) {
+        if (effect.cache == null || !effect.cache.isValid()) {
             return false;
         }
-        int duration = effect.durationMs > 0 ? effect.durationMs : 1000;
+        int duration = effect.cache.durationMs;
         long elapsed = now - effect.startedAtMs;
         if (!effect.loop && elapsed >= duration) {
             return false;
         }
         int time = effect.loop ? (int) (elapsed % duration) : (int) Math.min(elapsed, duration - 1L);
-        effect.movie.setTime(time);
 
-        float scaleX = effect.width / effect.movie.width();
-        float scaleY = effect.height / effect.movie.height();
-        float drawLeft = effect.centerX - effect.width * 0.5f;
-        float drawTop = effect.centerY - effect.height * 0.5f;
+        float progress = duration <= 0 ? 1f : Math.min(1f, elapsed / (float) duration);
+        float drawCenterX = effect.centerX;
+        float drawCenterY = effect.centerY;
+        float currentWidth = effect.width;
+        float currentHeight = effect.height;
+        if (!effect.loop) {
+            drawCenterX += effect.velocityX * progress;
+            drawCenterY += effect.velocityY * progress + 0.5f * effect.gravityY * progress * progress;
+            float scaleProgress = 1f - progress * effect.shrinkFactor;
+            float clampedScale = Math.max(0.18f, scaleProgress);
+            currentWidth *= clampedScale;
+            currentHeight *= clampedScale;
+        }
+
+        Bitmap frame = effect.cache.getFrame(time);
+        if (frame == null || frame.isRecycled()) {
+            return false;
+        }
+        float drawLeft = drawCenterX - currentWidth * 0.5f;
+        float drawTop = drawCenterY - currentHeight * 0.5f;
 
         canvas.save();
         canvas.translate(drawLeft, drawTop);
-        canvas.scale(scaleX, scaleY);
-        effect.movie.draw(canvas, 0f, 0f);
+        if (!effect.loop && effect.rotationDegrees != 0f) {
+            canvas.rotate(effect.rotationDegrees * progress, currentWidth * 0.5f, currentHeight * 0.5f);
+        }
+        canvas.drawBitmap(
+                frame,
+                null,
+                new android.graphics.RectF(0f, 0f, currentWidth, currentHeight),
+                gifPaint
+        );
         canvas.restore();
         return true;
     }
@@ -531,11 +566,12 @@ public class SixKeyTouchLayout extends FrameLayout {
             emitter.y = y;
             if (isNewEmitter || (action == MotionEvent.ACTION_DOWN && i == actionIndex)
                     || (action == MotionEvent.ACTION_POINTER_DOWN && i == actionIndex)) {
-                emitter.holdEffect = createGifEffect(holdEffectBytes, x, y, dpF(HOLD_EFFECT_SIZE_DP), true);
-                GifEffect pressEffect = createGifEffect(pressEffectBytes, x, y, dpF(PRESS_EFFECT_SIZE_DP), false);
+                emitter.holdEffect = createGifEffect(holdEffectCache, x, y, dpF(HOLD_EFFECT_SIZE_DP), true);
+                GifEffect pressEffect = createGifEffect(pressEffectCache, x, y, dpF(PRESS_EFFECT_SIZE_DP), false);
                 if (pressEffect != null) {
                     burstEffects.add(pressEffect);
                 }
+                spawnPressBurst(x, y);
             } else if (emitter.holdEffect != null) {
                 emitter.holdEffect.centerX = x;
                 emitter.holdEffect.centerY = y;
@@ -547,24 +583,44 @@ public class SixKeyTouchLayout extends FrameLayout {
         }
     }
 
-    @Nullable
-    private GifEffect createGifEffect(@Nullable byte[] bytes, float centerX, float centerY, float size, boolean loop) {
-        if (bytes == null || bytes.length == 0) {
-            return null;
+    private void spawnPressBurst(float centerX, float centerY) {
+        for (int burstIndex = 0; burstIndex < PRESS_BURST_COUNT; burstIndex++) {
+            double angle = (Math.PI * 2d * burstIndex / PRESS_BURST_COUNT)
+                    + randomRange(-0.22d, 0.22d);
+            float spawnRadius = dpF(PRESS_BURST_START_OFFSET_DP) * (0.45f + random.nextFloat() * 0.8f);
+            float spawnX = centerX + (float) Math.cos(angle) * spawnRadius;
+            float spawnY = centerY + (float) Math.sin(angle) * spawnRadius * 0.72f;
+            float size = dpF(PRESS_BURST_MIN_SIZE_DP)
+                    + random.nextFloat() * dpF(PRESS_BURST_MAX_SIZE_DP - PRESS_BURST_MIN_SIZE_DP);
+            GifEffect effect = createGifEffect(pressEffectCache, spawnX, spawnY, size, false);
+            if (effect == null) {
+                continue;
+            }
+            float speed = dpF(PRESS_BURST_SPEED_MIN_DP)
+                    + random.nextFloat() * dpF(PRESS_BURST_SPEED_MAX_DP - PRESS_BURST_SPEED_MIN_DP);
+            effect.velocityX = (float) Math.cos(angle) * speed;
+            effect.velocityY = (float) Math.sin(angle) * speed - dpF(92f + random.nextFloat() * 48f);
+            effect.gravityY = dpF(PRESS_BURST_GRAVITY_DP) * (0.85f + random.nextFloat() * 0.45f);
+            effect.rotationDegrees = -22f + random.nextFloat() * 44f;
+            effect.shrinkFactor = 0.58f + random.nextFloat() * 0.2f;
+            burstEffects.add(effect);
         }
-        Movie movie = Movie.decodeByteArray(bytes, 0, bytes.length);
-        if (movie == null || movie.width() <= 0 || movie.height() <= 0) {
+    }
+
+    @Nullable
+    private GifEffect createGifEffect(@Nullable GifFrameCache cache, float centerX, float centerY, float size, boolean loop) {
+        if (cache == null || !cache.isValid()) {
             return null;
         }
         GifEffect effect = new GifEffect();
-        effect.movie = movie;
+        effect.cache = cache;
         effect.centerX = centerX;
         effect.centerY = centerY;
         effect.width = size;
-        effect.height = size * (movie.height() / (float) movie.width());
+        effect.height = size * (cache.height / (float) cache.width);
         effect.loop = loop;
         effect.startedAtMs = SystemClock.uptimeMillis();
-        effect.durationMs = movie.duration() > 0 ? movie.duration() : 1000;
+        effect.shrinkFactor = 0f;
         return effect;
     }
 
@@ -688,8 +744,8 @@ public class SixKeyTouchLayout extends FrameLayout {
     }
 
     @Nullable
-    private byte[] readRawBytes(int resId) {
-        try (InputStream stream = getResources().openRawResource(resId);
+    private static byte[] readRawBytes(@NonNull Context context, int resId) {
+        try (InputStream stream = context.getResources().openRawResource(resId);
              ByteArrayOutputStream output = new ByteArrayOutputStream()) {
             byte[] buffer = new byte[4096];
             int read;
@@ -710,6 +766,10 @@ public class SixKeyTouchLayout extends FrameLayout {
         return value * getResources().getDisplayMetrics().density;
     }
 
+    private double randomRange(double min, double max) {
+        return min + random.nextDouble() * (max - min);
+    }
+
     private static final class TouchEmitter {
         final int pointerId;
         float x;
@@ -722,13 +782,79 @@ public class SixKeyTouchLayout extends FrameLayout {
     }
 
     private static final class GifEffect {
-        Movie movie;
+        GifFrameCache cache;
         float centerX;
         float centerY;
         float width;
         float height;
         boolean loop;
         long startedAtMs;
-        int durationMs;
+        float velocityX;
+        float velocityY;
+        float gravityY;
+        float rotationDegrees;
+        float shrinkFactor;
+    }
+
+    private static final class GifFrameCache {
+        private static final int TARGET_FRAME_MS = 33;
+        private static final int MAX_FRAME_COUNT = 48;
+
+        final Movie movie;
+        final int width;
+        final int height;
+        final int durationMs;
+        final int frameCount;
+        final LruCache<Integer, Bitmap> frames;
+
+        private GifFrameCache(@NonNull Movie movie) {
+            this.movie = movie;
+            width = movie.width();
+            height = movie.height();
+            durationMs = movie.duration() > 0 ? movie.duration() : 1000;
+            frameCount = Math.max(1, Math.min(MAX_FRAME_COUNT, Math.max(1, durationMs / TARGET_FRAME_MS)));
+            frames = new LruCache<Integer, Bitmap>(frameCount) {
+                @Override
+                protected int sizeOf(@NonNull Integer key, @NonNull Bitmap value) {
+                    return 1;
+                }
+            };
+        }
+
+        static GifFrameCache fromResource(@NonNull Context context, int resId) {
+            byte[] bytes = readRawBytes(context, resId);
+            if (bytes == null || bytes.length == 0) {
+                return null;
+            }
+            Movie movie = Movie.decodeByteArray(bytes, 0, bytes.length);
+            if (movie == null || movie.width() <= 0 || movie.height() <= 0) {
+                return null;
+            }
+            return new GifFrameCache(movie);
+        }
+
+        boolean isValid() {
+            return width > 0 && height > 0;
+        }
+
+        @Nullable
+        Bitmap getFrame(int timeMs) {
+            if (!isValid()) {
+                return null;
+            }
+            int index = frameCount <= 1
+                    ? 0
+                    : Math.min(frameCount - 1, (int) ((timeMs / (float) durationMs) * frameCount));
+            Bitmap cached = frames.get(index);
+            if (cached != null && !cached.isRecycled()) {
+                return cached;
+            }
+            Bitmap rendered = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+            Canvas frameCanvas = new Canvas(rendered);
+            movie.setTime(Math.min(durationMs - 1, Math.max(0, index * durationMs / frameCount)));
+            movie.draw(frameCanvas, 0f, 0f);
+            frames.put(index, rendered);
+            return rendered;
+        }
     }
 }
