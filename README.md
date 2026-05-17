@@ -1,138 +1,56 @@
-# Breakin Falsus
+# Break-In-Falsus 
 
-Breakin Falsus is a landscape Android rhythm-game controller written in Java. It turns a phone into a six-key touch controller plus a motion mouse bridge, then forwards input to a PC through UDP or TCP packets, root HID gadget output, or Bluetooth HID device mode.
+如你所见，这是一个针对 [In Falsus](https://infalsus.lowiro.com) 的音游手柄项目，通过接受 陀螺仪 重力加速度计 加速度计 模拟鼠标，再配备触控面板模拟键盘6K，以解决抽象的创新立体（？节奏音游玩法。
 
-## Features
+[体验视频](https://www.bilibili.com/BV15goRBWE2X)
 
-- Six-key fullscreen touch input with multi-touch state aggregation
-- Keyboard output modes:
-  - UDP packet: `K|000000`
-  - TCP line packet: `K|000000\n`
-  - Root HID keyboard report
-  - Bluetooth HID keyboard report
-- Mouse input modes:
-  - Accelerometer with sensitivity and deadzone
-  - Gyroscope Z-axis with sensitivity and deadzone
-- Mouse output modes:
-  - UDP packet for accelerometer: `A|{float}`
-  - UDP packet for gyroscope: `M|{int}`
-  - TCP packet for accelerometer / gyroscope with the same payload format
-  - Root HID mouse movement report
-  - Bluetooth HID relative mouse report
-- Landscape-only controller UI
-- Collapsible settings panel with animated hide on `Apply`
-- Persistent configuration with automatic restore on next launch
+名字来源于 [brokenithm](https://github.com/tindy2013/Brokenithm-Android)，并对其架构进行了一定借鉴
 
-## Dependencies
+欢迎加入 QQ 群一起讨论/求助 1095558304
 
-This project intentionally keeps dependencies small:
+感谢 **Contributor** !
 
-- `androidx.appcompat:appcompat`
-- `com.google.android.material:material`
-- `com.github.topjohnwu.libsu:io`
+- [班奥 Bnao](https://github.com/Bnao-zh) 负责了重力加速度，以及Linux端的实现，并打包了tauri版本
 
-## Input and Output Model
+- [uuk](https://github.com/788009) 负责了 Python 服务器端的实现！
 
-### Keyboard input
+***
 
-The touchscreen is divided into six zones:
+## 安装使用
 
-1. Left Shift
-2. A
-3. S
-4. D
-5. F
-6. Space
+项目分为服务端与客户端。
 
-Touch states are collected from the parent fullscreen control and sent as one combined frame.
+对于 root HID 模式（尚未完善，仅有AndroLua最小实现，且需配置内核描述）只需要单客户端即可
 
-### Keyboard output
+对于 网络层 模式（也更推荐），配置好服务端 客户端以及对应端口，关闭防火墙即可使用。
 
-- UDP format: `K|000000`
-- TCP format: `K|000000\n`
-  - `0` means released
-  - `1` means pressed
-  - digits 1 through 6 map to the six touch zones above
-- Root HID / Bluetooth HID format:
-  - Left Shift is sent as the keyboard modifier bit
-  - `A`, `S`, `D`, `F`, `Space` are sent as standard HID keycodes
+服务端由 python 脚本编写，支持[Windows](main-server.py), [Linux](linux-main-server.py)，只需要下载本项目根目录下的对应文件（点击上面超链接），补足运行库，运行即可。或者使用 release 打包的 tauri 封装产物
 
-### Mouse input
+安卓端需要输入 电脑端的IP位置（通过 'ipconfig' 或者自带网络属性获得，通常为'192.168.x.x'）以及所使用的协议对应端口（默认UDP为5005 TCP为5006）
 
-- Accelerometer mode uses accelerometer X-axis values
-- Gyroscope mode uses gyroscope Z-axis values
-- Both modes support sensitivity and deadzone
+您有能力也可以开发适用于 Mac OS 的服务端，理论上只需要更换输出键鼠对应库。
 
-### Mouse output
+客户端暂时只支持安卓，这是因为<del>主播没米</del>，您有能力可以在此架构上开发iOS版本(整个扔个codex, Claude都行，我会稳稳地接住您)。pr welcome!
 
-- UDP accelerometer format: `A|{Value}`
-- UDP gyroscope format: `M|{Value}`
-- TCP accelerometer format: `A|{Value}`
-- TCP gyroscope format: `M|{Value}`
-- Root HID and Bluetooth HID mouse output send relative movement reports
+## 实现方式
 
-## TCP receiver notes
+默认推荐实现方式是通过 UDP 连接，鼠标输入使用 重力加速度（GRAVITY），或使用 USB 转发 TCP 连接。
 
-`main-server.py` now listens on both UDP and TCP using the same message protocol. TCP uses newline-delimited frames, for example:
+| 输出层 | 推荐度 | 介绍 | 配置难度 | 表现 |
+|   ---   |   ---   | --- |    ---    |  ---  |
+| UDP | 4/5 | 发包量小，延迟低 | 2/5 | 复杂网络环境下易丢包 |
+| TCP | 5/5 | 通过3次握手提升稳定性，避免丢包 建议使用 'adb reverse tcp:5006 tcp:5006' 来以 USB 协议传输 | 3/5 | 表现极佳，除了配置部分玄学 |
+| root HID | 2/5 | 设备要求较高，但是可以脱离服务端使用 | 5/5 | 延迟极低，但是配置需要 USB Gadget Tool ，难度较大 |
+| 蓝牙 HID （开发中）| X/5 | 不确定，需进一步开发 | 5/5 | 。。。 |
 
-```text
-K|010000
-A|0.125
-P|1
-```
+| 输入层 | 推荐度 | 介绍 |
+| --- | --- | --- |
+| GRAVITY | 5/5 | 能自动归中，表现极佳 |
+| GYRO | 4/5 | 支持相对坐标， 但是余数处理存在问题 |
+| ACCEL | 2/5 | 无防抖，稳定性依托，不会真有人的设备不支持吧（ |
 
-## Building locally
+## 开发提示
 
-### Windows
+项目存在大量 Gen-AI 内容，所以只要你拉得能看，review 通过即可。（
 
-```powershell
-.\gradlew.bat assembleDebug
-```
-
-### macOS / Linux
-
-```bash
-./gradlew assembleDebug
-```
-
-Output APK:
-
-```text
-app/build/outputs/apk/debug/app-debug.apk
-```
-
-## GitHub Actions
-
-This repository includes a workflow at `.github/workflows/android-debug.yml`.
-
-It will:
-
-- build the debug APK on push and pull request
-- support manual runs through `workflow_dispatch`
-- upload `app-debug.apk` as a workflow artifact
-
-## Root HID notes
-
-For HID mode, the target Android device must:
-
-- be rooted
-- expose writable HID gadget device files such as `/dev/hidg0` and `/dev/hidg1`
-
-The app uses `libsu` `SuFile` output streams to write HID reports.
-
-## Bluetooth HID notes
-
-For `BT_HID` mode, the Android phone acts as a Bluetooth HID combo device.
-
-- Android 9 or newer is recommended for `BluetoothHidDevice`
-- the phone must grant `BLUETOOTH_CONNECT` and `BLUETOOTH_ADVERTISE`
-- the target host should already be paired with the phone
-- enter the host MAC address in the new `Bluetooth Host MAC` field before applying the config
-
-## Current assumptions
-
-- Accelerometer UDP sends the raw X-axis float value
-- Gyroscope UDP sends the scaled Z-axis integer value
-- HID mouse movement uses the same processed delta after sensitivity and deadzone filtering
-
-If your PC-side service expects a different axis, packet timing strategy, or HID path layout, those can be adjusted in the app logic.
+客户端以纯JVAV编写，分离了 Input Output 类，并在[MainActivity.java]实现。
