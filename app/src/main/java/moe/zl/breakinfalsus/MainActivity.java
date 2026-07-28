@@ -7,6 +7,7 @@ import android.Manifest;
 import android.app.ActivityManager;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.content.Intent;
 import android.os.Build;
 import android.os.Bundle;
 import android.text.TextUtils;
@@ -35,6 +36,7 @@ import java.util.Locale;
 import moe.zl.breakinfalsus.input.SensorMouseController;
 import moe.zl.breakinfalsus.input.SixKeyTouchLayout;
 import moe.zl.breakinfalsus.output.BluetoothHidOutputTransport;
+import moe.zl.breakinfalsus.output.HidMouseMode;
 import moe.zl.breakinfalsus.output.OutputTransport;
 import moe.zl.breakinfalsus.output.RootHidOutputTransport;
 import moe.zl.breakinfalsus.output.TcpOutputTransport;
@@ -56,6 +58,7 @@ public class MainActivity extends AppCompatActivity implements SixKeyTouchLayout
     private static final String PREF_MOUSE_HID = "mouse_hid";
     private static final String PREF_KEYBOARD_OUTPUT = "keyboard_output";
     private static final String PREF_MOUSE_OUTPUT = "mouse_output";
+    private static final String PREF_HID_MOUSE_MODE = "hid_mouse_mode";
     private static final String PREF_SENSOR_MODE = "sensor_mode";
     private static final String PREF_SENSITIVITY = "sensitivity";
     private static final String PREF_DEADZONE = "deadzone";
@@ -213,6 +216,9 @@ public class MainActivity extends AppCompatActivity implements SixKeyTouchLayout
         });
         calibrateButton.setOnClickListener(view -> calibrateAccelerometer());
         lockTaskButton.setOnClickListener(view -> toggleLockTaskMode());
+        MaterialButton gadgetConfigButton = findViewById(R.id.gadgetConfigButton);
+        gadgetConfigButton.setOnClickListener(view ->
+                startActivity(new Intent(this, UsbGadgetConfigActivity.class)));
         sensitivitySlider.addOnChangeListener((slider, value, fromUser) -> {
             if (sensorMouseController != null) {
                 sensorMouseController.setSensitivity(value);
@@ -425,7 +431,10 @@ public class MainActivity extends AppCompatActivity implements SixKeyTouchLayout
         if (MODE_HID.equalsIgnoreCase(mode)) {
             String keyboardPath = getText(keyboardHidInput).isEmpty() ? "/dev/hidg0" : getText(keyboardHidInput);
             String mousePath = getText(mouseHidInput).isEmpty() ? "/dev/hidg1" : getText(mouseHidInput);
-            return new RootHidOutputTransport(keyboardPath, mousePath);
+            HidMouseMode mouseMode = HidMouseMode.fromPreference(
+                    preferences.getString(PREF_HID_MOUSE_MODE, HidMouseMode.RELATIVE.name())
+            );
+            return new RootHidOutputTransport(keyboardPath, mousePath, mouseMode);
         }
         String host = getText(hostInput);
         String portString = getText(portInput);

@@ -27,4 +27,26 @@
     <string name="bluetooth_hid_requires_android_p">BT_HID mode requires Android 9 or newer</string>
     <string name="invalid_port_fallback">Invalid port, fallback to 9527</string>
     <string name="invalid_key_width_ratios">Invalid key width ratios, use 1:1:1:1:1:1</string>
+    <string name="gadget_config_button">USB Gadget</string>
+    <string name="gadget_config_title">USB Gadget Config</string>
+    <string name="gadget_config_summary">Create keyboard and mouse HID descriptors through configfs. Mouse mode can be relative or absolute.</string>
+    <string name="gadget_name_hint">Gadget Name</string>
+    <string name="gadget_vendor_id_hint">Vendor ID (0x1234)</string>
+    <string name="gadget_product_id_hint">Product ID (0x5678)</string>
+    <string name="gadget_manufacturer_hint">Manufacturer</string>
+    <string name="gadget_product_name_hint">Product Name</string>
+    <string name="gadget_serial_hint">Serial Number</string>
+    <string name="gadget_mouse_mode_label">Mouse Descriptor Mode</string>
+    <string name="gadget_bind_udc">Bind first available UDC after update</string>
+    <string name="gadget_create_button">Create / Update</string>
+    <string name="gadget_restore_button">Restore System USB</string>
+    <string name="gadget_close_button">Close</string>
+    <string name="gadget_invalid_name">Invalid gadget name. Use letters, numbers, dot, underscore, or dash.</string>
+    <string name="gadget_status_working">Writing HID descriptors...</string>
+    <string name="gadget_status_success">Gadget %1$s updated. Keyboard: %2$s, Mouse: %3$s</string>
+    <string name="gadget_status_failed">Gadget update failed: %1$s</string>
+    <string name="gadget_restore_working">Restoring system USB configfs...</string>
+    <string name="gadget_restore_success">System USB configfs restored.</string>
+    <string name="gadget_restore_failed">Restore system USB failed: %1$s</string>
+    <string name="gadget_status_no_log">No shell log output.</string>
 </resources>

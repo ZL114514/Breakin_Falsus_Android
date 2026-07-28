@@ -112,7 +112,7 @@ public class SensorMouseController implements SensorEventListener {
             sensor = gravity;
         }
         if (sensor != null) {
-            sensorManager.registerListener(this, sensor, SensorManager.SENSOR_DELAY_GAME);
+            sensorManager.registerListener(this, sensor, SensorManager.SENSOR_DELAY_FASTEST);
         }
     }
 
